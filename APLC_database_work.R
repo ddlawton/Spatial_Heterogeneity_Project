@@ -54,125 +54,29 @@ names(CT)
 ggplot(CT,aes(x=diff_days,y=NDVIs/1000,color=binary_outbreak)) + geom_smooth() + theme_pubr()
 ggplot(CT,aes(x=diff_days,y=dissimilarity,color=binary_outbreak)) + geom_smooth() + theme_pubr()
 
+names(CT)
+modGI <- bam(
+  binary_outbreak ~ 
+    te(diff_days, NDVIs, by=Major_rain_zones, bs=c("tp", "tp"),k=c(5, 5), m=2)+
+    te(diff_days, NDVIs, by=REG_NAME_7, bs=c("tp", "tp"),k=c(5, 5), m=2)+
+    te(diff_days, NDVIs, by=Season, bs=c("tp", "tp"),k=c(5, 5), m=2),
+  family=binomial(),select = TRUE,discrete=TRUE,nthreads=7,data=CT,method="fREML")
+
+summary(modG)
+appraise(modG)
 
 
-dat <- CT
-
-date_dat <- APL_points
-
-date_dat$Date <- as.Date(date_dat$Date, format="%Y-%m-%d")
-names(date_dat)
-
-
-bioregions <- readOGR(dsn = "Australian_plague_locust_model/Data/Processed",
-                      layer = "Simplified_bioregion")
-filtered_bioregions3 <- st_as_sf(bioregions)
-
-world <- ne_countries(scale = "medium", returnclass = "sf")
-
-bio_names <- unique(dat$REG_NAME_7)
-
-date_dat$Outbreak <- as.factor(date_dat$binary_outbreak)
-
-dat$Outbreak <- as.factor(dat$binary_outbreak)
-dat$Bioregn <- (dat$REG_NAME_7)
-date_dat$Bioregn <- (date_dat$REG_NAME_7)
-
-dat <- dat %>% filter(Season != "NA")
-
-bio <- list()
-for(i in bio_names){
-  print(paste("Now computing",i))
-  
-  biorgn <- dat %>% filter(Bioregn == i)
-  
-  ob_summary <- date_dat %>% 
-    dplyr::filter(Bioregn == i) %>% 
-    group_by(Outbreak) %>% 
-    tally()
-  
-  no_outbreaks <- paste0("Non-outbreak (N: ",(ob_summary %>% filter(Outbreak=="0"))$n,")")
-  outbreaks <- paste0("Outbreak (N: ",(ob_summary %>% filter(Outbreak=="1"))$n,")")
-  
-  
-  g1 <- ggplot(biorgn,aes(x=days_diff,y=mean,color=(Outbreak))) +
-    geom_smooth() + ylab("NDVI") + xlab("") +
-    xlab("Days (0 = date of outbreak)")  +
-    scale_color_manual(name = "", labels = c("Non-Outbreak", "Outbreak"),values=c("#67a9cf","#ef8a62"))+
-    geom_vline(xintercept=0,color="red",linetype=2)  + 
-    geom_vline(xintercept=-35,color="black",linetype=2) + 
-    geom_vline(xintercept=-21,color="black",linetype=2) + 
-    scale_x_continuous(limits=c(-78,32),breaks=c(-78,-32,0,32))+
-    scale_y_continuous(breaks= pretty_breaks(n=4))+
-    expand_limits(y=0)+
-    theme_pubr(legend = "top")
-  g2 <- ggplot(biorgn,aes(x=days_diff,y=mean,color=(Outbreak))) +
-    geom_smooth() + ylab("NDVI") + 
-    xlab("Days (0 = date of outbreak)") +
-    scale_color_manual(name = "", labels = c("Non-Outbreak", "Outbreak"),values=c("#67a9cf","#ef8a62"))+
-    geom_vline(xintercept=0,color="red",linetype=2)  + 
-    geom_vline(xintercept=-35,color="black",linetype=2) + 
-    geom_vline(xintercept=-21,color="black",linetype=2) + 
-    scale_x_continuous(limits=c(-78,32),breaks=c(-78,-32,0,32))+
-    scale_y_continuous(breaks= pretty_breaks(n=4))+
-    facet_wrap(vars(Season),ncol=3,drop=FALSE)+
-    expand_limits(y=0)+
-    theme_pubr()  + theme(legend.position = "none")
-  g3 <- ggplot(data = world) + geom_sf() + 
-    geom_sf(data = (filtered_bioregions3 %>% filter(REG_NAME_7 == i)), aes(fill = REG_NAME_7)) +
-    coord_sf(xlim = c(130,155), ylim = c(-40,-15), expand = FALSE)+
-    theme_pubr() + theme(legend.position = "none")
-  g4 <- ggplot((date_dat %>% filter(Bioregn == toString(i),Outbreak==0)),
-               aes(x=Date,y=(as.integer(Outbreak)+1),color=(Outbreak))) + geom_col(color="black")+
-    theme_pubr() + ylab("Number of observations") + xlab("Year") +
-    scale_color_discrete(name = "", labels = c("Outbreak")) +
-    ggtitle(paste(no_outbreaks))+
-    scale_y_continuous(breaks= pretty_breaks(n=4))+
-    scale_x_date(date_breaks = "5 years", date_minor_breaks = "1 year",
-                 date_labels = "%Y",limits= as.Date(c('2000-01-01','2020-12-31')))
-  
-  g5 <- ggplot((date_dat %>% filter(Bioregn == toString(i),Outbreak==1)),
-               aes(x=Date,y=as.integer(Outbreak),color=(Outbreak))) + geom_col(color="black")+
-    theme_pubr() + ylab("Number of observations") + xlab("Year") +
-    scale_color_discrete(name = "", labels = c("Outbreak")) +
-    ggtitle(paste(outbreaks))+
-    scale_y_continuous(breaks= pretty_breaks(n=4))+
-    scale_x_date(date_breaks = "5 years", date_minor_breaks = "1 year",
-                 date_labels = "%Y",limits= as.Date(c('2000-01-01','2020-12-31')))
-  t <- toString(i)
-  p1 <- ggplotGrob(g1)
-  p2 <- ggplotGrob(g2)
-  p3 <- ggplotGrob(g3)
-  p4 <- ggplotGrob(g4)
-  p5 <- ggplotGrob(g5)
-  
-  lay <- rbind(c(3,3,3,3,3),
-               c(3,3,3,3,3),
-               c(1,1,1,4,4),
-               c(1,1,1,5,5),
-               c(2,2,2,2,2))
-  
-  bio[[i]] <- grid.arrange(
-    grobs = list(p1,p2,p3,p4,p5),
-    layout_matrix = lay,
-    top=t
-  )
-}
+CT$preds <- predict(modG,newdata = CT,type="response")
 
 
 
-plot <- grid.arrange(
-  grobs = list(p1,p2,p3,p4,p5),
-  layout_matrix = lay,
-  top=t)
+ggplot(CT,aes(x=diff_days,y=NDVIs/1000,z=(preds))) +
+  stat_summary_2d() + ylab("NDVI")  +
+  scale_fill_viridis() #+ ylim(0,.25) 
 
-ml <- marrangeGrob(bio, nrow=1, ncol=1)
-ggsave("MS_figures/APL_bioregion_breakdown_Dec25.pdf", ml,height=11,width=8.5,units="in")
-
-
-
-
-
+ggplot(CT,aes(x=diff_days,y=dissimilarity,z=(preds))) +
+  stat_summary_2d() + ylab("")  +
+  scale_fill_viridis()#+ ylim(0,75)
 
 
 ##########
