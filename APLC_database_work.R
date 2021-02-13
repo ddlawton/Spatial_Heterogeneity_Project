@@ -51,32 +51,56 @@ OA <- dat %>%
 CT <- CT %>% filter(between(diff_days,-60,0)) %>% filter(NDVIs >= 0)
 names(CT)
 
-ggplot(CT,aes(x=diff_days,y=NDVIs/1000,color=binary_outbreak)) + geom_smooth() + theme_pubr()
-ggplot(CT,aes(x=diff_days,y=dissimilarity,color=binary_outbreak)) + geom_smooth() + theme_pubr()
 
-names(CT)
-modGI <- bam(
+CT$contrasts_normalized <- (CT$contrasts - min(CT$contrasts))/(max(CT$contrasts)-min(CT$contrasts))
+CT$correlation_normalized <- (CT$correlation - min(CT$correlation))/(max(CT$correlation)-min(CT$correlation))
+CT$dissimilarity_normalized <- (CT$dissimilarity - min(CT$dissimilarity))/(max(CT$dissimilarity)-min(CT$dissimilarity))
+CT$entropy_normalized <- (CT$entropy - min(CT$entropy))/(max(CT$entropy)-min(CT$entropy))
+CT$homogeneity_normalized <- (CT$homogeneity - min(CT$homogeneity))/(max(CT$homogeneity)-min(CT$homogeneity))
+
+
+CT2 <- CT %>% mutate(
+  spatial_hetero = rowMeans(select(.,ends_with("_normalized")), na.rm = TRUE))
+
+summary(CT2$spatial_hetero)
+
+CT$spatial_hetero <- rowMeans(CT$contrasts_normalized,CT$correlation_normalized,
+                              CT$dissimilarity_normalized,CT$entropy_normalized,
+                              CT$homogeneity_normalized)
+
+
+ggplot(CT2,aes(x=spatial_hetero,y=NDVIs/1000)) + geom_smooth() + theme_pubr()
+ggplot(CT2,aes(x=diff_days,y=spatial_hetero,color=binary_outbreak)) + geom_smooth() + theme_pubr()
+
+mod <- bam(binary_outbreak ~  te(diff_days,spatial_hetero) + te(diff_days,NDVIs) + 
+             te(Latitude,Longitude) + s(REG_NAME_7, bs="re") +
+             s(Major_rain_zones,bs="re") + s(Season,bs="re"),
+           family=binomial(link="probit"),data=CT2)
+
+summary(mod)
+draw(mod)
+appraise(mod)
+names(CT2)
+CT2$preds <- predict(mod,newdata = CT2,type="response")
+CT2$Season
+ggplot(CT2,aes(x=diff_days,y=NDVIs,z=preds)) +stat_summary_hex() + scale_fill_viridis() #+ ylim(0.2,0.4)
+
+write.csv(CT2,file="Data/Processed/CT_modeling_dat.csv")
+
+
+summary(CT2)
+modI <- bam(
   binary_outbreak ~ 
     te(diff_days, NDVIs, by=Major_rain_zones, bs=c("tp", "tp"),k=c(5, 5), m=2)+
     te(diff_days, NDVIs, by=REG_NAME_7, bs=c("tp", "tp"),k=c(5, 5), m=2)+
-    te(diff_days, NDVIs, by=Season, bs=c("tp", "tp"),k=c(5, 5), m=2),
-  family=binomial(),select = TRUE,discrete=TRUE,nthreads=7,data=CT,method="fREML")
+    te(diff_days, NDVIs, by=Season, bs=c("tp", "tp"),k=c(5, 5), m=2) +
+    te(diff_days, spatial_hetero, by=Major_rain_zones, bs=c("tp", "tp"),k=c(5, 5), m=2)+
+    te(diff_days, spatial_hetero, by=REG_NAME_7, bs=c("tp", "tp"),k=c(5, 5), m=2)+
+    te(diff_days, spatial_hetero, by=Season, bs=c("tp", "tp"),k=c(5, 5), m=2)+
+    s(Latitude,Longitude,k=50),
+  family=binomial(),select = TRUE,discrete=TRUE,nthreads=8,data=CT2,method="fREML",
+  drop.unused.levels=FALSE)
 
-summary(modG)
-appraise(modG)
-
-
-CT$preds <- predict(modG,newdata = CT,type="response")
-
-
-
-ggplot(CT,aes(x=diff_days,y=NDVIs/1000,z=(preds))) +
-  stat_summary_2d() + ylab("NDVI")  +
-  scale_fill_viridis() #+ ylim(0,.25) 
-
-ggplot(CT,aes(x=diff_days,y=dissimilarity,z=(preds))) +
-  stat_summary_2d() + ylab("")  +
-  scale_fill_viridis()#+ ylim(0,75)
 
 
 ##########
