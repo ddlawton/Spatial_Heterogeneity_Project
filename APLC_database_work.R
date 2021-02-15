@@ -68,37 +68,44 @@ CT$spatial_hetero <- rowMeans(CT$contrasts_normalized,CT$correlation_normalized,
                               CT$dissimilarity_normalized,CT$entropy_normalized,
                               CT$homogeneity_normalized)
 
+tab <- CT2 %>% group_by(Major_rain_zones, binary_outbreak)  %>% tally() %>% pivot_wider(names_from = binary_outbreak,values_from = n)
 
+tab2 <- (tab %>% filter(`0` > 200, `1` > 10) %>% droplevels()) 
+names_list <- levels(tab2$REG_NAME_7)
+
+
+view(tab)
 ggplot(CT2,aes(x=spatial_hetero,y=NDVIs/1000)) + geom_smooth() + theme_pubr()
 ggplot(CT2,aes(x=diff_days,y=spatial_hetero,color=binary_outbreak)) + geom_smooth() + theme_pubr()
 
 mod <- bam(binary_outbreak ~  te(diff_days,spatial_hetero) + te(diff_days,NDVIs) + 
              te(Latitude,Longitude) + s(REG_NAME_7, bs="re") +
              s(Major_rain_zones,bs="re") + s(Season,bs="re"),
-           family=binomial(link="probit"),data=CT2)
+           family=binomial(link="probit"),data=CT2,select = TRUE,discrete=TRUE,nthreads=8)
 
 summary(mod)
-draw(mod)
-appraise(mod)
-names(CT2)
-CT2$preds <- predict(mod,newdata = CT2,type="response")
-CT2$Season
-ggplot(CT2,aes(x=diff_days,y=NDVIs,z=preds)) +stat_summary_hex() + scale_fill_viridis() #+ ylim(0.2,0.4)
+#draw(mod)
+#appraise(mod)
+#names(CT2)
+#CT2$preds <- predict(mod,newdata = CT2,type="response")
+#CT2$Season
+#ggplot(CT2,aes(x=diff_days,y=NDVIs,z=preds)) +stat_summary_hex() + scale_fill_viridis() #+ ylim(0.2,0.4)
 
-write.csv(CT2,file="Data/Processed/CT_modeling_dat.csv")
+#write.csv(CT2,file="Data/Processed/CT_modeling_dat.csv")
+
+CT3 <- CT2 %>% filter(REG_NAME_7 %in% names_list)
 
 
-summary(CT2)
 modI <- bam(
   binary_outbreak ~ 
-    te(diff_days, NDVIs, by=Major_rain_zones, bs=c("tp", "tp"),k=c(5, 5), m=2)+
-    te(diff_days, NDVIs, by=REG_NAME_7, bs=c("tp", "tp"),k=c(5, 5), m=2)+
-    te(diff_days, NDVIs, by=Season, bs=c("tp", "tp"),k=c(5, 5), m=2) +
     te(diff_days, spatial_hetero, by=Major_rain_zones, bs=c("tp", "tp"),k=c(5, 5), m=2)+
     te(diff_days, spatial_hetero, by=REG_NAME_7, bs=c("tp", "tp"),k=c(5, 5), m=2)+
     te(diff_days, spatial_hetero, by=Season, bs=c("tp", "tp"),k=c(5, 5), m=2)+
+    te(diff_days, NDVIs, by=Major_rain_zones, bs=c("tp", "tp"),k=c(5, 5), m=2)+
+    te(diff_days, NDVIs, by=REG_NAME_7, bs=c("tp", "tp"),k=c(5, 5), m=2)+
+    te(diff_days, NDVIs, by=Season, bs=c("tp", "tp"),k=c(5, 5), m=2)+
     s(Latitude,Longitude,k=50),
-  family=binomial(),select = TRUE,discrete=TRUE,nthreads=8,data=CT2,method="fREML",
+  family=binomial(),select = TRUE,discrete=TRUE,nthreads=8,data=CT3,method="fREML",
   drop.unused.levels=FALSE)
 
 
