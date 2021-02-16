@@ -48,3 +48,5 @@ data/sample_dl_grid.dbf
 data/sample_dl_grid.prj
 data/sample_dl_grid.shp
 data/sample_dl_grid.shx
+*.csv
+.RDataTmp
