@@ -35,7 +35,7 @@ dat$band<- as.factor(dat$band)
 
 dat$Month <- month(dat$Date)
 
-dat2 <- dat %>%
+dat <- dat %>%
   mutate(Season = case_when(
     Month == 1 ~ "Winter",
     Month == 2 ~ "Winter",
@@ -53,7 +53,7 @@ dat2 <- dat %>%
 
 flevels  <- c("Winter","Spring","Summer","Fall")
 dat2$Season <- factor(dat2$Season,levels=flevels)
-
+names(dat2)
 
 # Now adding Recession/Invasion zones from Cyril
 
@@ -113,7 +113,5 @@ dat6 <- dat5 %>% tidyr::fill(!c("NDVIs","contrasts","correlation","dates","dissi
 
 dat6$diff_days <- as.numeric(difftime(anytime(dat6$dates/1000), (dat6$Date), units = "days"))
 
-
-
-write.csv(dat6,file="Data/processed/DL_database_hierarchical_data_Feb_15.csv")
+write.csv(dat6,file="Data/processed/DL_database_hierarchical_data_Feb_24.csv")
 
