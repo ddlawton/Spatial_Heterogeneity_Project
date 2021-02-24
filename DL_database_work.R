@@ -35,24 +35,7 @@ dat$band<- as.factor(dat$band)
 
 dat$Month <- month(dat$Date)
 
-dat <- dat %>%
-  mutate(Season = case_when(
-    Month == 1 ~ "Winter",
-    Month == 2 ~ "Winter",
-    Month == 3 ~ "Winter",
-    Month == 4 ~ "Spring",
-    Month == 5 ~ "Spring",
-    Month == 6 ~ "Spring",
-    Month == 7 ~ "Summer",
-    Month == 8 ~ "Summer",
-    Month == 9 ~ "Summer",
-    Month == 10 ~ "Fall",
-    Month ==11 ~ "Fall",
-    Month == 12 ~ "Fall"
-  ))
 
-flevels  <- c("Winter","Spring","Summer","Fall")
-dat2$Season <- factor(dat2$Season,levels=flevels)
 names(dat2)
 
 # Now adding Recession/Invasion zones from Cyril
@@ -98,7 +81,16 @@ dat <- test2 %>%
   dplyr::select(1:30,ECO_NAME)
 
 
+tab <- dat %>% group_by(ECO_NAME,outbreak) %>% tally() %>% pivot_wider(names_from = outbreak,values_from = n) %>%
+  mutate(total = `0`+`1`) %>%  filter(total > 200) %>% filter(`1` >= 100)
 
+
+tab_names <- unique(tab$ECO_NAME)
+
+names <- c("Mediterranean woodlands and forests","Mediterranean dry woodlands and steppe","Atlantic coastal desert",
+           "Mediterranean acacia-argania dry woodlands and succulent thickets")
+
+dat <- dat %>%filter((ECO_NAME %in% tab_names)) %>% filter(!(ECO_NAME %in% names)) %>% droplevels()
 
 
 dat4 <- cSplit(setDT(dat)[, lapply(.SD, gsub, pattern = "[][}]", 
@@ -108,10 +100,55 @@ dat4[dat4 == ""] <- NA # define NA pattern
 dat5 <- dat4[rowSums(is.na(dat4)) != ncol(dat4), ]
 
 names(dat5)
+
 dat6 <- dat5 %>% tidyr::fill(!c("NDVIs","contrasts","correlation","dates","dissimilarity","entropy",
                                 "homogeneity"), .direction = 'down') 
 
 dat6$diff_days <- as.numeric(difftime(anytime(dat6$dates/1000), (dat6$Date), units = "days"))
 
-write.csv(dat6,file="Data/processed/DL_database_hierarchical_data_Feb_24.csv")
+dat6 <- dat6 %>% drop_na(c("NDVIs","contrasts","correlation","dates","dissimilarity","entropy",
+                           "homogeneity")) %>%
+  filter(between(NDVIs,0,1000)) %>% 
+  filter(between(diff_days,-78,0)) %>%
+  filter(between(contrasts,0,4000)) %>%
+  filter(between(dissimilarity,0,100)) %>%
+  filter(between(entropy,0,5))
+
+summary(dat6$dissimilarity)
+
+
+dat6$contrasts_normalized <- (dat6$contrasts - min(dat6$contrasts))/(max(dat6$contrasts)-min(dat6$contrasts))
+#dat6$correlation_normalized <- (dat6$correlation - min(dat6$correlation))/(max(dat6$correlation)-min(dat6$correlation))
+dat6$dissimilarity_normalized <- (dat6$dissimilarity - min(dat6$dissimilarity))/(max(dat6$dissimilarity)-min(dat6$dissimilarity))
+dat6$entropy_normalized <- (dat6$entropy - min(dat6$entropy))/(max(dat6$entropy)-min(dat6$entropy))
+#dat6$homogeneity_normalized <- (dat6$homogeneity - min(dat6$homogeneity))/(max(dat6$homogeneity)-min(dat6$homogeneity))
+
+dat6 <- dat6 %>% mutate(
+  spatial_hetero = rowMeans(dplyr::select(.,ends_with("_normalized")), na.rm = TRUE)) 
+
+dat6$binary_outbreak <- as.factor(dat6$outbreak)
+
+
+
+dat7 <- dat6 %>%
+  mutate(Season = case_when(
+    Month == 1 ~ "Winter",
+    Month == 2 ~ "Winter",
+    Month == 3 ~ "Winter",
+    Month == 4 ~ "Spring",
+    Month == 5 ~ "Spring",
+    Month == 6 ~ "Spring",
+    Month == 7 ~ "Summer",
+    Month == 8 ~ "Summer",
+    Month == 9 ~ "Summer",
+    Month == 10 ~ "Fall",
+    Month ==11 ~ "Fall",
+    Month == 12 ~ "Fall"
+  ))
+
+flevels  <- c("Winter","Spring","Summer","Fall")
+dat7$Season <- factor(dat7$Season,levels=flevels)
+str(dat7)
+
+write.csv(dat7,file="Data/processed/DL_database_hierarchical_data_Feb_24.csv")
 
