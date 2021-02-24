@@ -107,14 +107,20 @@ dat6 <- dat5 %>% tidyr::fill(!c("NDVIs","contrasts","correlation","dates","dissi
 dat6$diff_days <- as.numeric(difftime(anytime(dat6$dates/1000), (dat6$Date), units = "days"))
 
 dat6 <- dat6 %>% drop_na(c("NDVIs","contrasts","correlation","dates","dissimilarity","entropy",
-                           "homogeneity")) %>%
-  filter(between(NDVIs,0,1000)) %>% 
-  filter(between(diff_days,-78,0)) %>%
-  filter(between(contrasts,0,4000)) %>%
-  filter(between(dissimilarity,0,100)) %>%
-  filter(between(entropy,0,5))
+                           "homogeneity")) 
 
-summary(dat6$dissimilarity)
+dat6 <- dat6 %>% filter(between(NDVIs,0,1000)) %>% filter(between(diff_days,-78,0))
+
+dat6 <- dat6 %>% filter(between(contrasts,quantile(contrasts, 0.025),quantile(contrasts, 0.975)))
+
+
+
+#%>%
+#  filter(between(NDVIs,0,1000)) %>% 
+#  filter(between(diff_days,-78,0)) %>%
+#  filter(between(contrasts,0,4000)) %>%
+#  filter(between(dissimilarity,0,100)) %>%
+#  filter(between(entropy,0,5))
 
 
 dat6$contrasts_normalized <- (dat6$contrasts - min(dat6$contrasts))/(max(dat6$contrasts)-min(dat6$contrasts))
