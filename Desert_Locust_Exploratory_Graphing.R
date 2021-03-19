@@ -43,6 +43,7 @@ dat$entropy_normalized <- (dat$entropy - min(dat$entropy))/(max(dat$entropy)-min
 #dat$homogeneity_normalized <- (dat$homogeneity - min(dat$homogeneity))/(max(dat$homogeneity)-min(dat$homogeneity))
 
 
+
 dat <- dat %>% mutate(
   spatial_hetero = rowMeans(dplyr::select(.,ends_with("_normalized")), na.rm = TRUE)) 
 
@@ -68,17 +69,24 @@ flevels  <- c("Winter","Spring","Summer","Fall")
 dat$Season <- factor(dat$Season,levels=flevels)
 
 
-ggplot(dat2,aes(x=as.factor(outbreak),y=spatial_hetero)) + geom_boxplot()
+ggplot(dat,aes(x=as.factor(outbreak),y=spatial_hetero)) + geom_boxplot()
 
-ggplot(dat2,aes(x=NDVIs,y=spatial_hetero)) + geom_smooth()
 
-ggplot(dat2,aes(x=diff_days,y=NDVIs,color=as.factor(outbreak))) +geom_smooth() + xlim(-60,0)
+ggplot(dat,aes(x=NDVIs,y=spatial_hetero)) + geom_smooth()
 
-ggplot(dat2,aes(x=diff_days,y=dissimilarity,color=as.factor(outbreak))) +geom_smooth()  + 
-  ylab("Spatial Heoterogenity")
+ggplot(dat,aes(x=diff_days,y=NDVIs,color=as.factor(outbreak))) +geom_smooth() + xlim(-60,0)
 
-ggplot(dat2,aes(x=diff_days,y=spatial_hetero,color=as.factor(outbreak))) +geom_smooth()  + 
-  ylab("Spatial Heoterogenity") + facet_wrap(~Zone)
+ggplot(dat,aes(x=diff_days,y=dissimilarity,color=as.factor(outbreak))) +geom_smooth()  + 
+  ylab("Dissimilarity")
+
+ggplot(dat,aes(x=diff_days,y=contrasts,color=as.factor(outbreak))) +geom_smooth()  + 
+  ylab("contrasts")
+
+ggplot(dat,aes(x=diff_days,y=entropy,color=as.factor(outbreak))) +geom_smooth()  + 
+  ylab("Entropy")
+
+ggplot(dat,aes(x=diff_days,y=spatial_hetero,color=as.factor(outbreak))) +geom_smooth()  + 
+  ylab("Spatial Heoterogenity") + ylim(0,.5) + theme_pubclean()
 
 dat2$outbreak <- as.factor(dat2$outbreak)
 dat2$Zone <- as.factor(dat2$Zone)
