@@ -3,6 +3,7 @@
 #####
 
 rm(list=ls())
+library(parallel)
 library(tidyverse)
 library(anytime)
 library(splitstackshape)
@@ -14,17 +15,31 @@ library("rnaturalearthdata")
 library(ggpubr)
 library(viridis)
 library(gridExtra)
-dat <- read.csv("data/processed/APLC_database_hierarchical_data_Feb_8.csv")
+library(lubridate)
+dat <- fread("data/processed/APLC_database_hierarchical_data_Feb_8.csv")
 
 tab <- dat %>% group_by(as.factor(Species), as.factor(NymphDensity)) %>% tally() %>% pivot_wider(names_from = `as.factor(NymphDensity)`, values_from=n)
 view(tab)
 
-str(dat)
+tab <- dat %>% group_by(REG_NAME_7,binary_outbreak) %>% tally() %>% pivot_wider(names_from = binary_outbreak,values_from = n) %>%
+  mutate(total = `0`+`1`) %>%  filter(total > 200) %>% filter(`1` >= 100)
+view(tab)
+
+tab_names <- unique(as.factor(tab$REG_NAME_7)) %>% droplevels()
+
+dat <- dat %>% filter((REG_NAME_7 %in% tab_names)) %>% droplevels()
 
 cols <- c("AdultDensity", "AdultStage", "DataQuality", "NymphDensity","NymphStage","Source","Species",
           "spp_code","binary_outbreak","REG_NAME_7","Minor_rain_zones","Major_rain_zones","Source_code",
           "Season")
-dat[cols] <- lapply(dat[cols], factor)
+
+for(col in cols){
+  set(dat, j = col, value = as.factor(dat[[col]]))
+}
+
+dat$Date <- as.Date(dat$Date)
+dat$Year <- year(dat$Date)
+dat$DOY <- (yday(dat$Date) + 183) %% 366
 
 
 
@@ -48,42 +63,141 @@ OA <- dat %>%
     Species == '10' | Species == '19'
   )
 
-CT <- CT %>% filter(between(diff_days,-60,0)) %>% filter(NDVIs >= 0)
-names(CT)
+
+CT <- CT %>%
+  filter(between(diff_days,-60,0)) %>% filter(NDVIs >= 0) %>%
+  mutate(
+    contrasts_scaled = scale(contrasts,center = TRUE, scale=TRUE),
+    correlation_scaled = scale(correlation,center = TRUE, scale=TRUE),
+    dissimilarity_scaled = scale(dissimilarity,center = TRUE, scale=TRUE),
+    entropy_scaled = scale(entropy,center = TRUE, scale=TRUE),
+    homogeneity_scaled = scale(homogeneity,center = TRUE, scale=TRUE)) 
+
+CT <- CT %>% mutate(
+    contrasts_normalized = (CT$contrasts_scaled - min(CT$contrasts_scaled))/(max(CT$contrasts_scaled)-min(CT$contrasts_scaled)),
+    correlation_normalized = (CT$correlation_scaled - min(CT$correlation_scaled))/(max(CT$correlation_scaled)-min(CT$correlation_scaled)),
+    dissimilarity_normalized = (CT$dissimilarity_scaled - min(CT$dissimilarity_scaled))/(max(CT$dissimilarity_scaled)-min(CT$dissimilarity_scaled)),
+    entropy_normalized = (CT$entropy_scaled - min(CT$entropy_scaled))/(max(CT$entropy_scaled)-min(CT$entropy_scaled)),
+    homogeneity_normalized = (CT$homogeneity_scaled - min(CT$homogeneity_scaled))/(max(CT$homogeneity_scaled)-min(CT$homogeneity_scaled))) 
+
+CT <- CT %>% mutate(
+    spatial_hetero = rowMeans(.[,35:39], na.rm = TRUE)
+  )
 
 
-CT$contrasts_normalized <- (CT$contrasts - min(CT$contrasts))/(max(CT$contrasts)-min(CT$contrasts))
-CT$correlation_normalized <- (CT$correlation - min(CT$correlation))/(max(CT$correlation)-min(CT$correlation))
-CT$dissimilarity_normalized <- (CT$dissimilarity - min(CT$dissimilarity))/(max(CT$dissimilarity)-min(CT$dissimilarity))
-CT$entropy_normalized <- (CT$entropy - min(CT$entropy))/(max(CT$entropy)-min(CT$entropy))
-CT$homogeneity_normalized <- (CT$homogeneity - min(CT$homogeneity))/(max(CT$homogeneity)-min(CT$homogeneity))
 
 
-CT2 <- CT %>% mutate(
-  spatial_hetero = rowMeans(select(.,ends_with("_normalized")), na.rm = TRUE))
+summary(CT$contrasts)
+summary(CT$correlation)
+summary(CT$dissimilarity)
+summary(CT$entropy)
+summary(CT$homogeneity)
 
-summary(CT2$spatial_hetero)
+#ggplot(CT,aes(x=spatial_hetero,y=homogeneity_scaled)) + geom_smooth() + theme_pubr()
 
-CT$spatial_hetero <- rowMeans(CT$contrasts_normalized,CT$correlation_normalized,
-                              CT$dissimilarity_normalized,CT$entropy_normalized,
-                              CT$homogeneity_normalized)
 
-tab <- CT2 %>% group_by(Major_rain_zones, binary_outbreak)  %>% tally() %>% pivot_wider(names_from = binary_outbreak,values_from = n)
+
+tab <- CT %>% group_by(REG_NAME_7, binary_outbreak)  %>% tally() %>% pivot_wider(names_from = binary_outbreak,values_from = n)
 
 tab2 <- (tab %>% filter(`0` > 200, `1` > 10) %>% droplevels()) 
 names_list <- levels(tab2$REG_NAME_7)
 
 
-view(tab)
-ggplot(CT2,aes(x=spatial_hetero,y=NDVIs/1000)) + geom_smooth() + theme_pubr()
-ggplot(CT2,aes(x=diff_days,y=spatial_hetero,color=binary_outbreak)) + geom_smooth() + theme_pubr()
+summary(CT)
 
-mod <- bam(binary_outbreak ~  te(diff_days,spatial_hetero) + te(diff_days,NDVIs) + 
-             te(Latitude,Longitude) + s(REG_NAME_7, bs="re") +
-             s(Major_rain_zones,bs="re") + s(Season,bs="re"),
-           family=binomial(link="probit"),data=CT2,select = TRUE,discrete=TRUE,nthreads=8)
+
+#ggplot(CT,aes(x=spatial_hetero,y=NDVIs/1000)) + geom_smooth() + theme_pubr()
+#ggplot(CT,aes(x=diff_days,y=spatial_hetero,color=as.factor(binary_outbreak))) + geom_smooth() + theme_pubr()
+
+names(CT)
+
+CT %>%
+  group_by(as.factor(Year),as.factor(binary_outbreak)) %>%
+  tally() %>% pivot_wider(names_from = `as.factor(binary_outbreak)`,values_from = n)
+
+mod <- bam(as.factor(binary_outbreak) ~ 
+             te(diff_days, spatial_hetero) + 
+             te(Longitude, Latitude, k = 15) + 
+             s((REG_NAME_7), bs = "re") + 
+             s((Major_rain_zones), bs = "re") + 
+             s((Season), bs = "re") +
+             s(DOY,bs="cc", k=12) +
+             s(Year,bs="tp", k=15) +
+             ti(DOY,Year, bs = c("cc", "tp"), k = c(12, 15)),
+           family=binomial(),data=CT,select = TRUE,discrete=TRUE,nthreads=8)
+
+mod2 <- bam(as.factor(binary_outbreak) ~ 
+             te(diff_days, spatial_hetero) + 
+             te(Longitude, Latitude, k = 15) + 
+             s((REG_NAME_7), bs = "re") + 
+             s((Major_rain_zones), bs = "re") + 
+             s((Season), bs = "re") +
+             te(DOY,Year, bs = c("cc", "tp"), k = c(12, 15)),
+           family=binomial(),data=CT,select = TRUE,discrete=TRUE,nthreads=8)
+
+
+mod3 <- bam(as.factor(binary_outbreak) ~ 
+              te(diff_days, spatial_hetero) + 
+              s((REG_NAME_7), bs = "re") + 
+              s((Major_rain_zones), bs = "re") + 
+              s((Season), bs = "re") +
+              te(DOY,Year, bs = c("cc", "tp"), k = c(12, 15))+
+              te(Year,Longitude, Latitude, k = 15), 
+            family=binomial(),data=CT,select = TRUE,chunk.size=5000,cluster=cl)
+
+###see if you have multiple cores
+
+detectCores()
+
+###indicate number of cores used for parallel processing
+if (detectCores()>1) {
+  cl <- makeCluster(detectCores()-1)
+} else cl <- NULL
+
+cl
+
+system.time(mod1 <- bam(as.factor(binary_outbreak) ~ 
+                          te(diff_days, spatial_hetero) + 
+                          te(Longitude, Latitude, k = 15) + 
+                          s((REG_NAME_7), bs = "re") + 
+                          s((Major_rain_zones), bs = "re") + 
+                          s((Season), bs = "re") +
+                          s(DOY,bs="cc", k=12) +
+                          s(Year,bs="tp", k=15) +
+                          ti(DOY,Year, bs = c("cc", "tp"), k = c(12, 15)),
+                        family=binomial(),data=CT,select = TRUE,cluster=cl))
+
+if (!is.null(cl)) stopCluster(cl)
+
+
+
 
 summary(mod)
+summary(mod2)
+AIC(mod,mod2)
+draw(mod2)
+draw(mod)
+concurvity(mod)
+k.check(mod)
+
+names(CT)
+pdat <- with(CT, expand.grid(Major_rain_zones = levels(Major_rain_zones), 
+                             REG_NAME_7 = levels(REG_NAME_7), Season = levels(Season), 
+                             Longitude = seq(min(Longitude), max(Longitude), length = 10),
+                             Latitude = seq(min(Latitude), max(Latitude), length = 10),
+                             diff_days = seq(min(diff_days), max(diff_days), length = 10),
+                             spatial_hetero = seq(min(spatial_hetero), max(spatial_hetero), length = 10)
+)
+)
+
+pdat <- transform(pdat, pred = predict(mod, newdata = pdat, type = "response"))
+names(pdat)
+ggplot(pdat,aes(x=diff_days,y=spatial_hetero,z=(pred))) + stat_summary_2d(bins=15) + scale_fill_viridis()
+draw(mod)
+
+
+
+
 #draw(mod)
 #appraise(mod)
 #names(CT2)

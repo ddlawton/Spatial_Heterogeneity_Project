@@ -50,3 +50,8 @@ data/sample_dl_grid.shp
 data/sample_dl_grid.shx
 *.csv
 .RDataTmp
+models/.DS_Store
+models/DL_mods/mod.rds
+models/mod.rds
+models/mod2.rds
+models/mod3.rds

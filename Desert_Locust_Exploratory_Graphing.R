@@ -34,19 +34,10 @@ rawdat <- rawdat %>% dplyr::select("DATE","Latitude","Longitude","outbreak")
 dat <- fread("Data/processed/DL_database_hierarchical_data_Feb_24.csv")
 dat$NDVIs <- dat$NDVIs/1000
 
-dat <- dat %>% drop_na(c(contrasts,correlation,dissimilarity,entropy,homogeneity,NDVIs)) %>% filter(between(NDVIs,0,1)) %>% filter(between(diff_days,-78,0))
-
-dat$contrasts_normalized <- (dat$contrasts - min(dat$contrasts))/(max(dat$contrasts)-min(dat$contrasts))
-#dat$correlation_normalized <- (dat$correlation - min(dat$correlation))/(max(dat$correlation)-min(dat$correlation))
-dat$dissimilarity_normalized <- (dat$dissimilarity - min(dat$dissimilarity))/(max(dat$dissimilarity)-min(dat$dissimilarity))
-dat$entropy_normalized <- (dat$entropy - min(dat$entropy))/(max(dat$entropy)-min(dat$entropy))
-#dat$homogeneity_normalized <- (dat$homogeneity - min(dat$homogeneity))/(max(dat$homogeneity)-min(dat$homogeneity))
-
-
-
-dat <- dat %>% mutate(
-  spatial_hetero = rowMeans(dplyr::select(.,ends_with("_normalized")), na.rm = TRUE)) 
-
+dat <- dat %>% drop_na(c(contrasts,correlation,dissimilarity,entropy,homogeneity,NDVIs)) %>% 
+  filter(between(NDVIs,0,1)) %>% filter(between(diff_days,-78,0)) %>% 
+  dplyr::select(!c("contrasts_normalized", "dissimilarity_normalized","entropy_normalized",
+            "spatial_hetero"))
 
 
 dat <- dat %>%
@@ -67,7 +58,45 @@ dat <- dat %>%
 
 flevels  <- c("Winter","Spring","Summer","Fall")
 dat$Season <- factor(dat$Season,levels=flevels)
+dat$Date <- as.Date(dat$Date)
 
+
+
+cols <- c("SHPAPPGREG", "SHPAPPSOL", "SHPAPPTRAN", "SHPAPPUNK","SHPDENGRP","SHPDENISOL","SHPDENSCAT",
+          "adult","band","outbreak","swarm","Zone","ECO_NAME","binary_outbreak")
+
+for(col in cols){
+  set(dat, j = col, value = as.factor(dat[[col]]))
+}
+
+
+dat$DOY <- yday(dat$Date)
+dat$Year <- year(dat$Date)
+
+names(dat)
+
+dat <- dat %>%
+  filter(between(diff_days,-60,0)) %>% filter(NDVIs >= 0) %>%
+  mutate(
+    contrasts_scaled = scale(contrasts,center = TRUE, scale=TRUE),
+    correlation_scaled = scale(correlation,center = TRUE, scale=TRUE),
+    dissimilarity_scaled = scale(dissimilarity,center = TRUE, scale=TRUE),
+    entropy_scaled = scale(entropy,center = TRUE, scale=TRUE),
+    homogeneity_scaled = scale(homogeneity,center = TRUE, scale=TRUE)) 
+
+dat <- dat %>% mutate(
+  contrasts_normalized = (dat$contrasts_scaled - min(dat$contrasts_scaled))/(max(dat$contrasts_scaled)-min(dat$contrasts_scaled)),
+  correlation_normalized = (dat$correlation_scaled - min(dat$correlation_scaled))/(max(dat$correlation_scaled)-min(dat$correlation_scaled)),
+  dissimilarity_normalized = (dat$dissimilarity_scaled - min(dat$dissimilarity_scaled))/(max(dat$dissimilarity_scaled)-min(dat$dissimilarity_scaled)),
+  entropy_normalized = (dat$entropy_scaled - min(dat$entropy_scaled))/(max(dat$entropy_scaled)-min(dat$entropy_scaled)),
+  homogeneity_normalized = (dat$homogeneity_scaled - min(dat$homogeneity_scaled))/(max(dat$homogeneity_scaled)-min(dat$homogeneity_scaled))) 
+names(dat)
+
+names(dat)
+
+dat <- dat %>% mutate(
+  spatial_hetero = rowMeans(.[,43:47], na.rm = TRUE)
+)
 
 ggplot(dat,aes(x=as.factor(outbreak),y=spatial_hetero)) + geom_boxplot()
 
@@ -162,6 +191,7 @@ names(dat)
 eco_names <- unique(dat$ECO_NAME) %>% droplevels()
 date_dat_projected2$outbreak <- as.factor(date_dat_projected2$outbreak)
 
+
 eco <- list()
 for(i in eco_names){
   print(paste("Now computing",i))
@@ -182,7 +212,7 @@ for(i in eco_names){
     geom_vline(xintercept=0,color="red",linetype=2)  + 
     geom_vline(xintercept=-35,color="black",linetype=2) + 
     geom_vline(xintercept=-21,color="black",linetype=2) + 
-    scale_x_continuous(limits=c(-78,0))+
+    scale_x_continuous(limits=c(-60,0))+
     scale_y_continuous(breaks= pretty_breaks(n=4))+
     expand_limits(y=0)+
     theme_pubr(legend = "top")
@@ -193,7 +223,7 @@ for(i in eco_names){
     geom_vline(xintercept=0,color="red",linetype=2)  + 
     geom_vline(xintercept=-35,color="black",linetype=2) + 
     geom_vline(xintercept=-21,color="black",linetype=2) + 
-    scale_x_continuous(limits=c(-78,0))+
+    scale_x_continuous(limits=c(-60,0))+
     scale_y_continuous(breaks= pretty_breaks(n=4))+
     facet_wrap(vars(Season),ncol=4,drop=FALSE)+
     expand_limits(y=0)+
@@ -242,4 +272,88 @@ for(i in eco_names){
 
 
 ml <- marrangeGrob(eco, nrow=1, ncol=1)
-ggsave("Figures/DL_breakdown_ecoregion_Feb26.pdf", ml,height=11,width=8.5,units="in")
+ggsave("Figures/DL_breakdown_ecoregion_March22.pdf", ml,height=11,width=8.5,units="in")
+
+# mod results by bioregion
+
+mod <- readRDS("models/DL_mods/mod.rds")
+dat$preds <- predict(mod,type="response")
+
+
+eco <- list()
+for(i in eco_names){
+  print(paste("Now computing",i))
+  ecorgn <- dat %>% filter(ECO_NAME == i)
+  
+  ob_summary <- date_dat_projected2 %>% 
+    dplyr::filter(ECO_NAME == i) %>% 
+    group_by(outbreak) %>% 
+    tally()
+  
+  no_outbreaks <- paste0("Non-outbreak (N: ",(ob_summary %>% filter(outbreak=="0"))$n,")")
+  outbreaks <- paste0("Outbreak (N: ",(ob_summary %>% filter(outbreak=="1"))$n,")")
+  
+  g1 <- ggplot(ecorgn,aes(x=diff_days,y=spatial_hetero,z=preds)) +
+    stat_summary_hex() + ylab("Heterogeneity") + xlab("") +
+    xlab("Days (0 = date of outbreak)") +
+    scale_fill_viridis() +
+    scale_x_continuous(limits=c(-60,0))+
+    #scale_y_continuous(breaks= pretty_breaks(n=4))+
+    #expand_limits(y=0)+
+    theme_pubr(legend = "top")
+  g2 <- ggplot(ecorgn,aes(x=diff_days,y=spatial_hetero,z=preds)) +
+    stat_summary_hex() + ylab("Heterogeneity") + 
+    xlab("Days (0 = date of outbreak)") +
+    scale_fill_viridis() +
+    scale_x_continuous(limits=c(-60,0))+
+    #scale_y_continuous(breaks= pretty_breaks(n=4))+
+    facet_wrap(vars(Season),ncol=4,drop=FALSE)+
+   # expand_limits(y=0)+
+    theme_pubr()  + theme(legend.position = "none")
+  g3 <- ggplot(data = world) + geom_sf() + 
+    geom_sf(data = (filtered_ecoregions2 %>% filter(ECO_NAME == toString(i))), aes(fill = ECO_NAME)) +
+    coord_sf(xlim = c(-20,80), ylim = c(0,40), expand = FALSE) +
+    theme_pubr() + theme(legend.position = "none")
+  g4 <- ggplot((date_dat_projected2 %>% filter(ECO_NAME == toString(i),outbreak==0)),
+               aes(x=DATE,y=as.integer(outbreak),color=(outbreak))) + geom_col(color="black")+
+    theme_pubr() + ylab("Number of observations") + xlab("Year") +
+    scale_color_discrete(name = "", labels = c("Outbreak")) +
+    ggtitle(paste(no_outbreaks))+
+    scale_y_continuous(breaks= pretty_breaks(n=4))+
+    scale_x_date(date_breaks = "5 years", date_minor_breaks = "1 year",
+                 date_labels = "%Y",limits= as.Date(c('2000-01-01','2020-12-31')))
+  
+  g5 <- ggplot((date_dat_projected2 %>% filter(ECO_NAME == toString(i),outbreak==1)),
+               aes(x=DATE,y=as.integer(outbreak),color=(outbreak))) + geom_col(color="black")+
+    theme_pubr() + ylab("Number of observations") + xlab("Year") +
+    scale_color_discrete(name = "", labels = c("Outbreak")) +
+    ggtitle(paste(outbreaks))+
+    scale_y_continuous(breaks= pretty_breaks(n=4))+
+    scale_x_date(date_breaks = "5 years", date_minor_breaks = "1 year",
+                 date_labels = "%Y",limits= as.Date(c('2000-01-01','2020-12-31')))
+  
+  t <- toString(i)
+  p1 <- ggplotGrob(g1)
+  p2 <- ggplotGrob(g2)
+  p3 <- ggplotGrob(g3)
+  p4 <- ggplotGrob(g4)
+  p5 <- ggplotGrob(g5)
+  
+  lay <- rbind(c(3,3,3,3,3),
+               c(3,3,3,3,3),
+               c(1,1,1,4,4),
+               c(1,1,1,5,5),
+               c(2,2,2,2,2))
+  
+  eco[[i]] <- grid.arrange(
+    grobs = list(p1,p2,p3,p4,p5),
+    layout_matrix = lay,
+    top=t
+  )
+}
+
+
+ml <- marrangeGrob(eco, nrow=1, ncol=1)
+ggsave("Figures/DL_breakdown_ecoregion_March22.pdf", ml,height=11,width=8.5,units="in")
+
+
