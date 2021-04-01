@@ -292,9 +292,9 @@ for(i in eco_names){
   
   no_outbreaks <- paste0("Non-outbreak (N: ",(ob_summary %>% filter(outbreak=="0"))$n,")")
   outbreaks <- paste0("Outbreak (N: ",(ob_summary %>% filter(outbreak=="1"))$n,")")
-  
+
   g1 <- ggplot(ecorgn,aes(x=diff_days,y=spatial_hetero,z=preds)) +
-    stat_summary_hex() + ylab("Heterogeneity") + xlab("") +
+    stat_summary_hex(bins=21) + ylab("Heterogeneity") + xlab("") +
     xlab("Days (0 = date of outbreak)") +
     scale_fill_viridis() +
     scale_x_continuous(limits=c(-60,0))+
@@ -302,7 +302,7 @@ for(i in eco_names){
     #expand_limits(y=0)+
     theme_pubr(legend = "top")
   g2 <- ggplot(ecorgn,aes(x=diff_days,y=spatial_hetero,z=preds)) +
-    stat_summary_hex() + ylab("Heterogeneity") + 
+    stat_summary_hex(bins=21) + ylab("Heterogeneity") + 
     xlab("Days (0 = date of outbreak)") +
     scale_fill_viridis() +
     scale_x_continuous(limits=c(-60,0))+
@@ -354,6 +354,6 @@ for(i in eco_names){
 
 
 ml <- marrangeGrob(eco, nrow=1, ncol=1)
-ggsave("Figures/DL_breakdown_ecoregion_March22.pdf", ml,height=11,width=8.5,units="in")
+ggsave("Figures/DL_breakdown_ecoregion_March22_modeled.pdf", ml,height=11,width=8.5,units="in")
 
-
+k.check(mod)
