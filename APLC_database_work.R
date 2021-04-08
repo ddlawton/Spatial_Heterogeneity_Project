@@ -16,6 +16,8 @@ library(ggpubr)
 library(viridis)
 library(gridExtra)
 library(lubridate)
+library(patchwork)
+
 dat <- fread("data/processed/APLC_database_hierarchical_data_Feb_8.csv")
 
 tab <- dat %>% group_by(as.factor(Species), as.factor(NymphDensity)) %>% tally() %>% pivot_wider(names_from = `as.factor(NymphDensity)`, values_from=n)
@@ -93,9 +95,13 @@ summary(CT$dissimilarity)
 summary(CT$entropy)
 summary(CT$homogeneity)
 
-#ggplot(CT,aes(x=spatial_hetero,y=homogeneity_scaled)) + geom_smooth() + theme_pubr()
+spatial_hetero <- ggplot(CT,aes(x=diff_days,y=spatial_hetero,color=binary_outbreak)) + geom_smooth(method="gam") + theme_pubr() +xlim(-60,0) + ggtitle("spatial_hetero")
+contrasts <- ggplot(CT,aes(x=diff_days,y=contrasts,color=binary_outbreak)) + geom_smooth(method="gam") + theme_pubr() +xlim(-60,0) + ggtitle("contrasts")
+dissimilarity <- ggplot(CT,aes(x=diff_days,y=dissimilarity,color=binary_outbreak)) + geom_smooth(method="gam") + theme_pubr() +xlim(-60,0) + ggtitle("dissimilarity")
+entropy <- ggplot(CT,aes(x=diff_days,y=entropy,color=binary_outbreak)) + geom_smooth(method="gam") + theme_pubr() +xlim(-60,0) + ggtitle("entropy")
+homogeneity <- ggplot(CT,aes(x=diff_days,y=homogeneity,color=binary_outbreak)) + geom_smooth(method="gam") + theme_pubr() +xlim(-60,0) + ggtitle("homogeneity")
 
-
+spatial_hetero + contrasts + dissimilarity + entropy + homogeneity
 
 tab <- CT %>% group_by(REG_NAME_7, binary_outbreak)  %>% tally() %>% pivot_wider(names_from = binary_outbreak,values_from = n)
 

@@ -1,7 +1,7 @@
-######
-# Australian plague locust --
-#  Hierarhical structure extraction and
-#   general formatting for modeling
+#####
+# APLC
+#   90
+#    Landsat/MODIS modeling
 #####
 rm(list=ls())
 library(tidyverse)
@@ -19,8 +19,8 @@ library(zoo)
 
 
 #MODIS DAT
-dat <- fread("data/processed/CT_outbreaks_Feb_7_MODIS.csv")
-
+dat <- fread("data/raw/90_day_sat_data/CT_2km_outbreaks_Apr_5_MODIS (1).csv")
+names(dat)
 str(dat)
 
 dat$Date <- as.Date(dat$Date,format="%m/%d/%y")
@@ -66,7 +66,7 @@ spdf <- SpatialPointsDataFrame(coords=dat[,8:7],data=dat2,
 
 
 #Loading in raster
-rainzones <- raster("~/Dropbox (ASU)/Research/Gradaute/Chapter 4 - Hierarchical scaling of locust swarms/Hierarchical_locust_modeling/Australian_plague_locust_model/Data/Raw/seasonal_rainfall_zones.tif")
+rainzones <- raster("~/Dropbox (ASU)/Research/Graduate/Chapter 4 - Hierarchical scaling of locust swarms/Hierarchical_locust_modeling/Australian_plague_locust_model/Data/Raw/seasonal_rainfall_zones.tif")
 
 crs(rainzones) <- "+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs "
 
@@ -79,7 +79,7 @@ spdf <- raster::extract(rainzones,spdf,method="simple",df=TRUE,sp=TRUE)
 
 ## Extraction Bioregions
 
-bioregions <- readOGR(dsn="~/Dropbox (ASU)/Research/Gradaute/Chapter 4 - Hierarchical scaling of locust swarms/Hierarchical_locust_modeling/Australian_plague_locust_model/Data/Raw/IBRA_bioregions", layer = "IBRA_bioregions")
+bioregions <- readOGR(dsn="~/Dropbox (ASU)/Research/Graduate/Chapter 4 - Hierarchical scaling of locust swarms/Hierarchical_locust_modeling/Australian_plague_locust_model/Data/Raw/IBRA_bioregions", layer = "IBRA_bioregions")
 
 crs(bioregions)
 
@@ -134,20 +134,23 @@ dat3 <- spdf2@data %>%
 
 dat4 <- cSplit(setDT(dat3)[, lapply(.SD, gsub, pattern = "[][}]", 
                                     replacement = "")], names(dat3), sep=",", direction='long', fixed = FALSE, "long")
-head(dat6)
+head(dat4)
+
+
 dat4[dat4 == ""] <- NA # define NA pattern
 dat5 <- dat4[rowSums(is.na(dat4)) != ncol(dat4), ]
 
 dat6 <- dat5 %>% tidyr::fill(c("AdultDensity", "Date", "AdultStage","DataQuality", "Latitude", 
                                "Longitude","ID","NymphDensity","NymphStage","Source","spp_code","Source_code","Species",
                                "binary_outbreak","REG_NAME_7","Minor_rain_zones","Major_rain_zones","unixdates","system.index"), .direction = 'down') 
+summary(dat6)
 
 dat6$dates <- as.Date(dat6$dates, format= "%Y-%m-%dT%H:%M:%S")
 
 dat6$Date <- as.Date(dat6$Date,format="%Y-%m-%d")
 
 
-dat6$diff_days <- as.numeric(difftime(dat6$dates, (dat6$Date), units = "days"))
+dat6$diff_days <- as.numeric(difftime(anytime(dat6$dates/1000), (dat6$Date), units = "days"))
 
 
 yq <- as.yearqtr(as.yearmon(dat6$Date) + 1/12)
@@ -165,7 +168,7 @@ write.csv(dat7,file="Data/processed/APLC_90day_MODIS_April62021.csv")
 
 # Landsat data
 
-dat <- fread("data/processed/CT_2km_outbreaks_Apr_3_Landsat.csv")
+dat <- fread("data/raw/90_day_sat_data/CT_2km_outbreaks_Apr_6_Landsat.csv")
 
 str(dat)
 
@@ -212,7 +215,8 @@ spdf <- SpatialPointsDataFrame(coords=dat[,8:7],data=dat2,
 
 
 #Loading in raster
-rainzones <- raster("~/Dropbox (ASU)/Research/Gradaute/Chapter 4 - Hierarchical scaling of locust swarms/Hierarchical_locust_modeling/Australian_plague_locust_model/Data/Raw/seasonal_rainfall_zones.tif")
+rainzones <- raster("~/Dropbox (ASU)/Research/Graduate/Chapter 4 - Hierarchical scaling of locust swarms/Hierarchical_locust_modeling/Australian_plague_locust_model/Data/Raw/seasonal_rainfall_zones.tif")
+
 
 crs(rainzones) <- "+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs "
 
@@ -225,7 +229,7 @@ spdf <- raster::extract(rainzones,spdf,method="simple",df=TRUE,sp=TRUE)
 
 ## Extraction Bioregions
 
-bioregions <- readOGR(dsn="~/Dropbox (ASU)/Research/Gradaute/Chapter 4 - Hierarchical scaling of locust swarms/Hierarchical_locust_modeling/Australian_plague_locust_model/Data/Raw/IBRA_bioregions", layer = "IBRA_bioregions")
+bioregions <- readOGR(dsn="~/Dropbox (ASU)/Research/Graduate/Chapter 4 - Hierarchical scaling of locust swarms/Hierarchical_locust_modeling/Australian_plague_locust_model/Data/Raw/IBRA_bioregions", layer = "IBRA_bioregions")
 
 crs(bioregions)
 
@@ -307,4 +311,6 @@ dat7 <- dat6 %>% filter(
 
 summary(dat7)
 
-write.csv(dat7,file="Data/processed/APLC_90day_MODIS_April62021.csv")
+write.csv(dat7,file="Data/processed/APLC_90day_Landsat_April72021.csv")
+
+
