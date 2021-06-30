@@ -60,3 +60,13 @@ Figures/DL_breakdown_ecoregion_March22_modeled.pdf
 Figures/FIgure_construction_safeplace.pptx
 *.txt
 *.tif
+APHIS_dat.R
+data/raw/APHIS_Data/.DS_Store
+data/raw/MODIS Image/spdf3_buffed.dbf
+data/raw/MODIS Image/spdf3_buffed.prj
+data/raw/MODIS Image/spdf3_buffed.shp
+data/raw/MODIS Image/spdf3_buffed.shx
+file.grd
+file.gri
+results.RData
+data/raw/.DS_Store

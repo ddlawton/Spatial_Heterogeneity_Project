@@ -10,13 +10,14 @@ library(lubridate)
 library(raster)
 library(sp)
 library(sf)
+library(rgeos)
+library(rgdal)
 library(svMisc) #oh this is a cool package I just discovered that gives a progress bar to be used in for loops
 
 #Fractal function (from Cyril Piou)
 
 fractalD <-
-  function(locRASTER,threshold=NULL,output=FALSE) 
-  {
+  function(locRASTER,threshold=NULL,output=FALSE){
     smlDim=min(c(nrow(locRASTER),ncol(locRASTER)))
     m=matrix(locRASTER,nrow=nrow(locRASTER),ncol=ncol(locRASTER))
     if(nrow(locRASTER)!=ncol(locRASTER)){
@@ -111,21 +112,59 @@ CT <- CT %>% rename(
 
 CT$diff_days <- as.numeric(difftime(CT$Band_date, CT$Date, units = "days")) #this calculates the difference between locust observation date and image collection dates
 
+names(CT)
+target <- c("11","10")
+CT2 <- CT %>% filter(Species %in% target)
 
-### Now starting to compute Fractal stats
+### Now starting to compute Fractal statsa
 
-spdf <- SpatialPointsDataFrame(coords=CT[,4:5],data=CT,
+spdf <- SpatialPointsDataFrame(coords=CT2[,4:5],data=CT2,
                                proj4string = CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
 
 spdf2 <- spTransform(spdf,crs("+proj=aea +lat_1=-18 +lat_2=-36 +lat_0=0 +lon_0=132 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"))
 
-
-
+plot(r)
+plot(CT2, add=TRUE)
 
 MODIS_raster_location <- "data/raw/MODIS Image/MODIS_NDVI.tif"
 
+r <- raster(MODIS_raster_location, band=1)
+
 spdf3 <- st_as_sf(spdf2)
 spdf3_buffed <- st_buffer(spdf3, dist = 2500, endCapStyle = 'SQUARE') #this creates a 5km x 5km square buffer around the point. For CT this might be too big?
+
+
+
+
+library(exactextractr)
+
+spSubset <- spdf3_buffed %>% filter(BandNumber == 788)
+BandNumber <-spSubset$BandNumber
+r_b1 <- raster(MODIS_raster_location,band=BandNumber) 
+
+exact_extract(
+  x=r_b1,
+  y=spSubset,
+  progress=TRUE,
+  summarize_df = TRUE,
+  fun = function(x) Moran(x)
+)
+
+
+
+
+spdf3_buffed <- spdf3_buffed %>% rowid_to_column()
+
+
+library(spex)
+
+
+
+projection(spdf3_buffed) == projection(p2)
+spsel <- st_intersection(spdf3_buffed, p2)
+
+plot(r)
+plot(spsel,add=TRUE)
 
 # we are calculating Morans I, Fractal D, and Means in one big for-loop. Is there a better way to do this? probably....
 # Moran's I is coming from the raster package
@@ -136,11 +175,11 @@ spdf3_buffed$meanNDVI$Moran <- 0
 spdf3_buffed$meanNDVI <- 0
 
 for (i in 1:nrow(spdf3_buffed)){
-  progress(i) #calculates progress
+  print(i) #calculates progress
   spSubset <- spdf3_buffed[i,]
   BandNumber <-spSubset$BandNumber
   r <- raster(MODIS_raster_location,band=BandNumber) 
-  cropped_raster <- crop(r, st_bbox(spSubset))
+  cropped_raster <- crop(r, (spSubset))
   b <- as.numeric(fractalD(cropped_raster))
   c <- as.numeric(Moran(cropped_raster))
   layermeans <- cellStats(cropped_raster, stat='mean', na.rm=TRUE)
@@ -150,5 +189,110 @@ for (i in 1:nrow(spdf3_buffed)){
   spdf3_buffed$meanNDVI[[i]] <- u
 }
 
-write.csv(spdf3_buffed,file="test.csv")
+
+
+# Putting it into parallel
+library(doParallel)
+
+comb <- function(x, ...) {
+  lapply(seq_along(x),
+         function(i) c(x[[i]], lapply(list(...), function(y) y[[i]])))
+}
+
+registerDoParallel(cl <- makeCluster(7))
+sampled <- spdf3_buffed %>% sample_n(size=100)
+start <- Sys.time()
+fract_list <-list()
+Moran_list <-list()
+NDVI_mean_list <-list()
+data <- foreach(i = 1:nrow(sampled),.packages=c('raster','sf'),.combine="comb", .multicombine=TRUE,.init=list(list(), list(), list())) %dopar% {
+  spSubset <- sampled[i,]
+  BandNumber <-spSubset$BandNumber
+  r <- raster(MODIS_raster_location,band=BandNumber) 
+  cropped_raster <- crop(r, st_bbox(spSubset))
+  fract_list <- fractalD(cropped_raster)
+  Moran_list <- Moran(cropped_raster)
+  NDVI_mean_list <- mean(cellStats(cropped_raster, stat='mean', na.rm=TRUE))
+  list(fract_list,Moran_list,NDVI_mean_list)
+}
+
+stopCluster(cl)
+end <- Sys.time()
+end-start
+
+
+oper1 <- data[[1]]
+oper2 <- data[[2]]
+
+
+## playing around
+library(doSNOW)
+
+
+sampled <- spdf3_buffed %>% sample_n(size=100) %>% dplyr::select(!c("FractID","Moran","meanNDVI"))
+r_stacked <- stack("data/raw/MODIS Image/MODIS_NDVI.tif")
+library(doSNOW)
+cl <- makeCluster(7)
+registerDoSNOW(cl)
+iterations <- nrow(sampled)
+pb <- txtProgressBar(max = iterations, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+result <- foreach(i = 1:nrow(sampled),.packages=c('raster','sf'),.combine="comb", .multicombine=TRUE,.init=list(list(), list(), list()),
+                  .options.snow = opts) %dopar%{
+    spSubset <- sampled[1,]
+    BandNumber <-spSubset$BandNumber
+    r <- r_stacked[[i]]
+    cropped_raster <- crop(r, st_bbox(spSubset))
+    cropped_raster2 <- mask(cropped_raster, (spSubset))
+    cropped_raster2[cropped_raster2 < 10000] <- NA
+    fract_list <- fractalD(cropped_raster)
+    Moran_list <- Moran(cropped_raster)
+    NDVI_mean_list <- mean(cellStats(cropped_raster, stat='mean', na.rm=TRUE))
+    list(fract_list,Moran_list,NDVI_mean_list)
+}
+close(pb)
+stopCluster(cl) 
+
+save(result, file="results.RData")
+
+result_df<-as.data.frame(t((do.call(rbind.data.frame, t(result)))))
+
+sampled$Fract <- result_df$`2`
+sampled$Moran <- result_df$`21`
+sampled$Mean_NDVI <- result_df$`3`
+
+write.csv(sampled,file="Sample2.csv")
+st_write(spdf3_buffed, paste0(getwd(), "/", "Test_apr26.csv"))
+
+str(spdf3_buffed)
+fwrite(spdf3_buffed)
+
+
+str(spdf3_buffed)
+# Eh
+library(future.apply)
+
+sampled <- spdf3_buffed %>% sample_n(size=100)
+
+r_stacked <- stack("data/raw/MODIS Image/MODIS_NDVI.tif")
+r_stacked[[1]]
+
+
+
+s <- lapply(1:nrow(sampled), function(i) {
+  cat("processing", i, "of", nrow(sampled), "\n")
+  Sys.sleep(0.01)
+  flush.console()
+  rsub <- crop(r_stacked[[sampled[i,]$BandNumber]], extent(sampled[i,]))
+  fd <- as.data.frame(landscapemetrics::lsm_c_frac_mn(rsub))[,6][2]
+  c(fd, as.numeric(Moran(rsub)), mean(rsub[], na.rm=TRUE)) } )
+
+s <- future_lapply(1:nrow(sampled), function(i) {
+  rsub <- crop(r_stacked[[sampled[i,]$BandNumber]], extent(sampled[i,]))
+  fd <- as.data.frame(landscapemetrics::lsm_c_frac_mn(rsub))[,6][2]
+  c(fd, as.numeric(Moran(rsub)), mean(rsub[], na.rm=TRUE)) } )
+
+
+
 
